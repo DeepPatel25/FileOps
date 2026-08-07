@@ -26,6 +26,7 @@ const features = [
   { id: 'convert', title: 'Convert images', description: 'Convert images between PNG, JPEG, and WebP in a few clicks.', icon: 'convert' as IconName, category: 'Convert', color: 'violet', formats: 'PNG, JPEG, WebP', popular: true },
   { id: 'compress', title: 'Compress images', description: 'Reduce image size while keeping the quality you care about.', icon: 'compress' as IconName, category: 'Optimize', color: 'orange', formats: 'PNG, JPEG, WebP', popular: true },
   { id: 'pdf-compress', title: 'Compress PDF', description: 'Shrink scanned and image-heavy PDFs with quality presets.', icon: 'compress' as IconName, category: 'Optimize', color: 'amber', formats: 'PDF documents', popular: true },
+  { id: 'pdf-organize', title: 'Organize PDF pages', description: 'Reorder, rotate, and remove pages with visual previews.', icon: 'merge' as IconName, category: 'Organize', color: 'blue', formats: 'PDF documents', popular: true },
   { id: 'merge', title: 'Merge files', description: 'Combine PDFs and images into one organized PDF.', icon: 'merge' as IconName, category: 'Organize', color: 'blue', formats: 'PDF, PNG, JPEG, WebP', popular: false },
   { id: 'split', title: 'Split PDF', description: 'Separate selected pages or extract every page in seconds.', icon: 'split' as IconName, category: 'Organize', color: 'pink', formats: 'PDF documents', popular: false },
   { id: 'protect', title: 'Protect PDF', description: 'Add a password and keep confidential documents secure.', icon: 'protect' as IconName, category: 'Secure', color: 'green', formats: 'PDF documents', popular: false },
@@ -37,6 +38,7 @@ const features = [
 type Feature = typeof features[number]
 type ExtractedContent = { text: string; words: number; characters: number; pages?: number; fileName: string }
 type CompressionJob = { status: 'queued' | 'processing' | 'completed' | 'failed'; progress: number; originalSize: number; compressedSize?: number; reductionPercent?: number; encoder?: 'h264_videotoolbox' | 'libx264'; error?: string; downloadUrl?: string }
+type OrganizerPage = { page: number; thumbnail: string; rotation: number }
 const categories = ['All tools', 'Convert', 'Optimize', 'Organize', 'Secure']
 
 function Header({ onHome }: { onHome: () => void }) {
@@ -61,6 +63,8 @@ function ToolPage({ feature, onBack }: { feature: Feature; onBack: () => void })
   const [compressPdfFile, setCompressPdfFile] = useState<File | null>(null)
   const [pdfCompressionPreset, setPdfCompressionPreset] = useState<'high' | 'balanced' | 'small'>('balanced')
   const [pdfCompressionPassword, setPdfCompressionPassword] = useState('')
+  const [organizerFile, setOrganizerFile] = useState<File | null>(null)
+  const [organizerPages, setOrganizerPages] = useState<OrganizerPage[]>([])
   const [status, setStatus] = useState<'idle' | 'converting' | 'success' | 'error'>('idle')
   const [message, setMessage] = useState('')
   const [isDragging, setIsDragging] = useState(false)
@@ -185,6 +189,55 @@ function ToolPage({ feature, onBack }: { feature: Feature; onBack: () => void })
         : `This PDF is already efficiently optimized. The original was downloaded unchanged because recompressing it would make it larger.`)
     } catch (error) {
       setStatus('error'); setMessage(error instanceof Error ? error.message : 'PDF compression failed')
+    }
+  }
+
+  const selectOrganizerPdf = async (nextFile?: File) => {
+    if (!nextFile) return
+    if (nextFile.type !== 'application/pdf') { setStatus('error'); setMessage('Please choose a PDF file.'); return }
+    if (nextFile.size > 30 * 1024 * 1024) { setStatus('error'); setMessage('The maximum PDF size is 30 MB.'); return }
+    setOrganizerFile(nextFile); setOrganizerPages([]); setStatus('converting'); setMessage('Generating page previews…')
+    const data = new FormData(); data.append('file', nextFile)
+    try {
+      const response = await fetch('/api/v1/pdf-organize/preview', { method: 'POST', body: data })
+      if (!response.ok) {
+        const body = await response.json() as { error?: { message?: string } }
+        throw new Error(body.error?.message ?? 'Could not preview PDF pages')
+      }
+      const body = await response.json() as { data?: { pages: Array<{ page: number; thumbnail: string }> } }
+      if (!body.data?.pages.length) throw new Error('No PDF pages were found')
+      setOrganizerPages(body.data.pages.map((page) => ({ ...page, rotation: 0 })))
+      setStatus('idle'); setMessage('')
+    } catch (error) {
+      setOrganizerFile(null); setStatus('error'); setMessage(error instanceof Error ? error.message : 'Could not preview PDF pages')
+    }
+  }
+
+  const moveOrganizerPage = (index: number, direction: -1 | 1) => {
+    setOrganizerPages((current) => {
+      const target = index + direction
+      if (target < 0 || target >= current.length) return current
+      const pages = [...current]; [pages[index], pages[target]] = [pages[target]!, pages[index]!]
+      return pages
+    })
+  }
+
+  const exportOrganizedPdf = async () => {
+    if (!organizerFile || !organizerPages.length) return
+    setStatus('converting'); setMessage('Building your organized PDF…')
+    const data = new FormData(); data.append('file', organizerFile)
+    data.append('operations', JSON.stringify(organizerPages.map(({ page, rotation }) => ({ page, rotation }))))
+    try {
+      const response = await fetch('/api/v1/pdf-organize', { method: 'POST', body: data })
+      if (!response.ok) {
+        const body = await response.json() as { error?: { message?: string } }
+        throw new Error(body.error?.message ?? 'Could not organize PDF')
+      }
+      const blob = await response.blob(); const url = URL.createObjectURL(blob); const link = document.createElement('a')
+      link.href = url; link.download = `${organizerFile.name.replace(/\.pdf$/i, '')}-organized.pdf`; link.click(); URL.revokeObjectURL(url)
+      setStatus('success'); setMessage(`Done! Your organized PDF contains ${organizerPages.length} ${organizerPages.length === 1 ? 'page' : 'pages'}.`)
+    } catch (error) {
+      setStatus('error'); setMessage(error instanceof Error ? error.message : 'Could not organize PDF')
     }
   }
 
@@ -436,7 +489,15 @@ function ToolPage({ feature, onBack }: { feature: Feature; onBack: () => void })
         <h1>{feature.title}</h1>
         <p>{feature.description} Your files are encrypted and automatically deleted after processing.</p>
       </section>
-      {feature.id === 'pdf-compress' ? <section className={`upload-panel pdf-compress-panel ${isDragging ? 'dragging' : ''}`} onDragOver={(event) => { event.preventDefault(); setIsDragging(true) }} onDragLeave={() => setIsDragging(false)} onDrop={(event) => { event.preventDefault(); setIsDragging(false); selectCompressionPdf(event.dataTransfer.files[0]) }}>
+      {feature.id === 'pdf-organize' ? <section className={`upload-panel organizer-panel ${isDragging ? 'dragging' : ''}`} onDragOver={(event) => { event.preventDefault(); setIsDragging(true) }} onDragLeave={() => setIsDragging(false)} onDrop={(event) => { event.preventDefault(); setIsDragging(false); void selectOrganizerPdf(event.dataTransfer.files[0]) }}>
+        <input ref={inputRef} type="file" accept="application/pdf" hidden onChange={(event) => void selectOrganizerPdf(event.target.files?.[0])}/>
+        {!organizerFile ? <><div className="upload-icon organizer"><Icon name="merge" size={28}/></div><h2>Choose a PDF to organize</h2><p>PDF documents · Maximum 30 MB and 100 pages</p><button className="primary" disabled={status === 'converting'} onClick={() => inputRef.current?.click()}>{status === 'converting' ? <><span className="spinner"/> Creating previews…</> : <>Choose PDF <Icon name="arrow" size={17}/></>}</button></> : <div className="organizer-workspace">
+          <div className="organizer-header"><div><strong>Arrange pages</strong><span>{organizerPages.length} of 100 pages · Use arrows to reorder</span></div><button onClick={() => inputRef.current?.click()}>Replace PDF</button></div>
+          <div className="page-grid">{organizerPages.map((item, index) => <article className="page-card" key={item.page}><div className="page-thumb"><img src={item.thumbnail} alt={`Preview of original page ${item.page}`} style={{ transform: `rotate(${item.rotation}deg)` }}/></div><strong>Page {item.page}</strong><div className="page-actions"><button disabled={index === 0} onClick={() => moveOrganizerPage(index, -1)} aria-label={`Move page ${item.page} left`}>←</button><button disabled={index === organizerPages.length - 1} onClick={() => moveOrganizerPage(index, 1)} aria-label={`Move page ${item.page} right`}>→</button><button onClick={() => setOrganizerPages((pages) => pages.map((page) => page.page === item.page ? { ...page, rotation: (page.rotation + 90) % 360 } : page))} aria-label={`Rotate page ${item.page}`}>↻</button><button disabled={organizerPages.length === 1} onClick={() => setOrganizerPages((pages) => pages.filter((page) => page.page !== item.page))} aria-label={`Remove page ${item.page}`}>×</button></div></article>)}</div>
+          <button className="primary convert-button" disabled={status === 'converting' || !organizerPages.length} onClick={exportOrganizedPdf}>{status === 'converting' ? <><span className="spinner"/> Exporting…</> : <>Export organized PDF <Icon name="arrow" size={17}/></>}</button>
+        </div>}
+        {message && <div className={`status-message ${status}`} role="status" aria-live="polite">{status === 'success' && <Icon name="check" size={17}/>} {message}</div>}
+      </section> : feature.id === 'pdf-compress' ? <section className={`upload-panel pdf-compress-panel ${isDragging ? 'dragging' : ''}`} onDragOver={(event) => { event.preventDefault(); setIsDragging(true) }} onDragLeave={() => setIsDragging(false)} onDrop={(event) => { event.preventDefault(); setIsDragging(false); selectCompressionPdf(event.dataTransfer.files[0]) }}>
         <input ref={inputRef} type="file" accept="application/pdf" hidden onChange={(event) => selectCompressionPdf(event.target.files?.[0])}/>
         {!compressPdfFile ? <><div className="upload-icon pdf-compress"><Icon name="compress" size={28}/></div><h2>Choose a PDF to compress</h2><p>PDF documents · Maximum 100 MB and 1,000 pages</p><button className="primary" onClick={() => inputRef.current?.click()}>Choose PDF <Icon name="arrow" size={17}/></button></> : <div className="pdf-compress-workspace">
           <div className="selected-file"><div className="file-type pdf-compress">PDF</div><div><strong>{compressPdfFile.name}</strong><span>{(compressPdfFile.size / 1024 / 1024).toFixed(2)} MB</span></div><button onClick={() => { setCompressPdfFile(null); setStatus('idle'); setMessage('') }} aria-label="Remove PDF">×</button></div>

@@ -21,6 +21,8 @@ The API runs at `http://localhost:4000` by default.
 - `POST /api/v1/convert` — convert a PNG, JPEG, or WebP image (multipart fields: `file`, `format`)
 - `POST /api/v1/compress` — compress a PNG, JPEG, or WebP image (multipart fields: `file`, `quality`)
 - `POST /api/v1/pdf-compress` — compress a PDF using `high`, `balanced`, or `small` presets (multipart fields: `file`, `preset`, optional `password`; maximum 100 MB and 1,000 pages)
+- `POST /api/v1/pdf-organize/preview` — generate thumbnails for visual page organization (`file`; maximum 30 MB and 100 pages)
+- `POST /api/v1/pdf-organize` — reorder, rotate, or remove PDF pages (`file`, JSON `operations`)
 - `POST /api/v1/merge` — merge 2–10 PDF or image files into one PDF (multipart field: `files`)
 - `POST /api/v1/split` — extract selected PDF pages or split every page into a ZIP (`file`, `mode`, `pages`)
 - `POST /api/v1/protect` — encrypt a PDF with AES-256 and document permissions (`file`, `password`, permission fields)
