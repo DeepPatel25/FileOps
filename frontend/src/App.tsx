@@ -28,6 +28,7 @@ const features = [
   { id: 'pdf-compress', title: 'Compress PDF', description: 'Shrink scanned and image-heavy PDFs with quality presets.', icon: 'compress' as IconName, category: 'Optimize', color: 'amber', formats: 'PDF documents', popular: true },
   { id: 'pdf-organize', title: 'Organize PDF pages', description: 'Reorder, rotate, and remove pages with visual previews.', icon: 'merge' as IconName, category: 'Organize', color: 'blue', formats: 'PDF documents', popular: true },
   { id: 'batch-images', title: 'Batch images', description: 'Convert or compress up to 10 images and download one ZIP.', icon: 'compress' as IconName, category: 'Optimize', color: 'violet', formats: 'PNG, JPEG, WebP, ZIP', popular: true },
+  { id: 'ocr', title: 'OCR text recognition', description: 'Read English text from scanned PDFs and images.', icon: 'extract' as IconName, category: 'Convert', color: 'cyan', formats: 'PDF, PNG, JPEG, WebP', popular: true },
   { id: 'merge', title: 'Merge files', description: 'Combine PDFs and images into one organized PDF.', icon: 'merge' as IconName, category: 'Organize', color: 'blue', formats: 'PDF, PNG, JPEG, WebP', popular: false },
   { id: 'split', title: 'Split PDF', description: 'Separate selected pages or extract every page in seconds.', icon: 'split' as IconName, category: 'Organize', color: 'pink', formats: 'PDF documents', popular: false },
   { id: 'protect', title: 'Protect PDF', description: 'Add a password and keep confidential documents secure.', icon: 'protect' as IconName, category: 'Secure', color: 'green', formats: 'PDF documents', popular: false },
@@ -40,6 +41,7 @@ type Feature = typeof features[number]
 type ExtractedContent = { text: string; words: number; characters: number; pages?: number; fileName: string }
 type CompressionJob = { status: 'queued' | 'processing' | 'completed' | 'failed'; progress: number; originalSize: number; compressedSize?: number; reductionPercent?: number; encoder?: 'h264_videotoolbox' | 'libx264'; error?: string; downloadUrl?: string }
 type OrganizerPage = { page: number; thumbnail: string; rotation: number }
+type OcrResult = { text: string; pageCount: number; words: number; characters: number; averageConfidence: number; fileName: string }
 const categories = ['All tools', 'Convert', 'Optimize', 'Organize', 'Secure']
 
 function Header({ onHome }: { onHome: () => void }) {
@@ -70,6 +72,8 @@ function ToolPage({ feature, onBack }: { feature: Feature; onBack: () => void })
   const [batchOperation, setBatchOperation] = useState<'compress' | 'convert'>('compress')
   const [batchFormat, setBatchFormat] = useState<'webp' | 'jpeg' | 'png'>('webp')
   const [batchQuality, setBatchQuality] = useState(75)
+  const [ocrFile, setOcrFile] = useState<File | null>(null)
+  const [ocrResult, setOcrResult] = useState<OcrResult | null>(null)
   const [status, setStatus] = useState<'idle' | 'converting' | 'success' | 'error'>('idle')
   const [message, setMessage] = useState('')
   const [isDragging, setIsDragging] = useState(false)
@@ -275,6 +279,39 @@ function ToolPage({ feature, onBack }: { feature: Feature; onBack: () => void })
     } catch (error) {
       setStatus('error'); setMessage(error instanceof Error ? error.message : 'Batch processing failed')
     }
+  }
+
+  const selectOcrFile = (nextFile?: File) => {
+    if (!nextFile) return
+    const supported = ['application/pdf', 'image/png', 'image/jpeg', 'image/webp']
+    if (!supported.includes(nextFile.type)) { setStatus('error'); setMessage('Please choose a PDF, PNG, JPEG, or WebP file.'); return }
+    if (nextFile.size > 25 * 1024 * 1024) { setStatus('error'); setMessage('The maximum OCR file size is 25 MB.'); return }
+    setOcrFile(nextFile); setOcrResult(null); setStatus('idle'); setMessage('')
+  }
+
+  const runOcr = async () => {
+    if (!ocrFile) return
+    setStatus('converting'); setMessage('Recognizing text… This may take a moment.')
+    const data = new FormData(); data.append('file', ocrFile)
+    try {
+      const response = await fetch('/api/v1/ocr', { method: 'POST', body: data })
+      if (!response.ok) {
+        const body = await response.json() as { error?: { message?: string } }
+        throw new Error(body.error?.message ?? 'Text recognition failed')
+      }
+      const body = await response.json() as { data?: OcrResult }
+      if (!body.data) throw new Error('Text recognition returned no result')
+      setOcrResult(body.data); setStatus('success')
+      setMessage(body.data.text ? 'Text recognized successfully.' : 'No readable text was detected. Try a clearer or higher-resolution scan.')
+    } catch (error) {
+      setStatus('error'); setMessage(error instanceof Error ? error.message : 'Text recognition failed')
+    }
+  }
+
+  const downloadOcrText = () => {
+    if (!ocrResult) return
+    const url = URL.createObjectURL(new Blob([ocrResult.text], { type: 'text/plain;charset=utf-8' }))
+    const link = document.createElement('a'); link.href = url; link.download = `${ocrResult.fileName.replace(/\.[^.]+$/, '')}-ocr.txt`; link.click(); URL.revokeObjectURL(url)
   }
 
   const addMergeFiles = (incoming: File[]) => {
@@ -525,7 +562,18 @@ function ToolPage({ feature, onBack }: { feature: Feature; onBack: () => void })
         <h1>{feature.title}</h1>
         <p>{feature.description} Your files are encrypted and automatically deleted after processing.</p>
       </section>
-      {feature.id === 'batch-images' ? <section className={`upload-panel batch-panel ${isDragging ? 'dragging' : ''}`} onDragOver={(event) => { event.preventDefault(); setIsDragging(true) }} onDragLeave={() => setIsDragging(false)} onDrop={(event) => { event.preventDefault(); setIsDragging(false); addBatchFiles(Array.from(event.dataTransfer.files)) }}>
+      {feature.id === 'ocr' ? <section className={`upload-panel ocr-panel ${isDragging ? 'dragging' : ''}`} onDragOver={(event) => { event.preventDefault(); setIsDragging(true) }} onDragLeave={() => setIsDragging(false)} onDrop={(event) => { event.preventDefault(); setIsDragging(false); selectOcrFile(event.dataTransfer.files[0]) }}>
+        <input ref={inputRef} type="file" accept="application/pdf,image/png,image/jpeg,image/webp" hidden onChange={(event) => selectOcrFile(event.target.files?.[0])}/>
+        {!ocrFile ? <><div className="upload-icon ocr"><Icon name="extract" size={28}/></div><h2>Choose a scan or image</h2><p>PDF, PNG, JPEG, or WebP · English · Maximum 25 MB</p><button className="primary" onClick={() => inputRef.current?.click()}>Choose file <Icon name="arrow" size={17}/></button></> : !ocrResult ? <div className="ocr-workspace">
+          <div className="selected-file"><div className="file-type ocr">{ocrFile.name.split('.').pop()?.toUpperCase()}</div><div><strong>{ocrFile.name}</strong><span>{(ocrFile.size / 1024 / 1024).toFixed(2)} MB{ocrFile.type === 'application/pdf' ? ' · Up to 20 pages' : ''}</span></div><button onClick={() => { setOcrFile(null); setStatus('idle'); setMessage('') }} aria-label="Remove file">×</button></div>
+          <div className="ocr-note"><Icon name="sparkles" size={16}/><span><strong>For the best result</strong> Use a clear, upright scan with good contrast. Handwriting and heavily stylized text may be less accurate.</span></div>
+          <button className="primary convert-button" disabled={status === 'converting'} onClick={runOcr}>{status === 'converting' ? <><span className="spinner"/> Recognizing text…</> : <><Icon name="extract" size={17}/> Recognize text</>}</button><button className="replace-button" onClick={() => inputRef.current?.click()}>Choose a different file</button>
+        </div> : <div className="ocr-results"><div className="result-header"><div><span className="file-type ocr">TXT</span><div><strong>Recognized text</strong><small>{ocrResult.fileName}</small></div></div><button onClick={() => { setOcrResult(null); setOcrFile(null); setStatus('idle'); setMessage('') }}>Start over</button></div>
+          <div className="result-stats"><span><strong>{ocrResult.words.toLocaleString()}</strong> words</span><span><strong>{ocrResult.pageCount}</strong> {ocrResult.pageCount === 1 ? 'page' : 'pages'}</span><span><strong>{ocrResult.averageConfidence}%</strong> confidence</span></div>
+          <pre className="text-preview">{ocrResult.text || 'No readable text was detected.'}</pre><div className="result-actions"><button className="secondary-action" disabled={!ocrResult.text} onClick={async () => { await navigator.clipboard.writeText(ocrResult.text); setMessage('Copied to clipboard.') }}>Copy text</button><button className="primary" disabled={!ocrResult.text} onClick={downloadOcrText}>Download TXT <Icon name="arrow" size={16}/></button></div>
+        </div>}
+        {message && <div className={`status-message ${status}`} role="status" aria-live="polite">{status === 'success' && <Icon name="check" size={17}/>} {message}</div>}
+      </section> : feature.id === 'batch-images' ? <section className={`upload-panel batch-panel ${isDragging ? 'dragging' : ''}`} onDragOver={(event) => { event.preventDefault(); setIsDragging(true) }} onDragLeave={() => setIsDragging(false)} onDrop={(event) => { event.preventDefault(); setIsDragging(false); addBatchFiles(Array.from(event.dataTransfer.files)) }}>
         <input ref={inputRef} type="file" accept="image/png,image/jpeg,image/webp" multiple hidden onChange={(event) => addBatchFiles(Array.from(event.target.files ?? []))}/>
         {!batchFiles.length ? <><div className="upload-icon batch"><Icon name="upload" size={28}/></div><h2>Choose images to process</h2><p>PNG, JPEG, or WebP · Up to 10 files, 20 MB each</p><button className="primary" onClick={() => inputRef.current?.click()}>Choose images <Icon name="arrow" size={17}/></button></> : <div className="batch-workspace">
           <div className="batch-header"><div><strong>Selected images</strong><span>{batchFiles.length} of 10 files</span></div><button disabled={batchFiles.length >= 10} onClick={() => inputRef.current?.click()}>+ Add images</button></div>

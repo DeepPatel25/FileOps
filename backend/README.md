@@ -24,6 +24,7 @@ The API runs at `http://localhost:4000` by default.
 - `POST /api/v1/pdf-organize/preview` — generate thumbnails for visual page organization (`file`; maximum 30 MB and 100 pages)
 - `POST /api/v1/pdf-organize` — reorder, rotate, or remove PDF pages (`file`, JSON `operations`)
 - `POST /api/v1/batch-images` — convert or compress up to 10 images and download a ZIP (`files`, `operation`, `format`, `quality`)
+- `POST /api/v1/ocr` — recognize English text in an image or a scanned PDF (`file`; maximum 25 MB and 20 PDF pages)
 - `POST /api/v1/merge` — merge 2–10 PDF or image files into one PDF (multipart field: `files`)
 - `POST /api/v1/split` — extract selected PDF pages or split every page into a ZIP (`file`, `mode`, `pages`)
 - `POST /api/v1/protect` — encrypt a PDF with AES-256 and document permissions (`file`, `password`, permission fields)
