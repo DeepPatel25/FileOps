@@ -27,6 +27,7 @@ const features = [
   { id: 'compress', title: 'Compress images', description: 'Reduce image size while keeping the quality you care about.', icon: 'compress' as IconName, category: 'Optimize', color: 'orange', formats: 'PNG, JPEG, WebP', popular: true },
   { id: 'pdf-compress', title: 'Compress PDF', description: 'Shrink scanned and image-heavy PDFs with quality presets.', icon: 'compress' as IconName, category: 'Optimize', color: 'amber', formats: 'PDF documents', popular: true },
   { id: 'pdf-organize', title: 'Organize PDF pages', description: 'Reorder, rotate, and remove pages with visual previews.', icon: 'merge' as IconName, category: 'Organize', color: 'blue', formats: 'PDF documents', popular: true },
+  { id: 'batch-images', title: 'Batch images', description: 'Convert or compress up to 10 images and download one ZIP.', icon: 'compress' as IconName, category: 'Optimize', color: 'violet', formats: 'PNG, JPEG, WebP, ZIP', popular: true },
   { id: 'merge', title: 'Merge files', description: 'Combine PDFs and images into one organized PDF.', icon: 'merge' as IconName, category: 'Organize', color: 'blue', formats: 'PDF, PNG, JPEG, WebP', popular: false },
   { id: 'split', title: 'Split PDF', description: 'Separate selected pages or extract every page in seconds.', icon: 'split' as IconName, category: 'Organize', color: 'pink', formats: 'PDF documents', popular: false },
   { id: 'protect', title: 'Protect PDF', description: 'Add a password and keep confidential documents secure.', icon: 'protect' as IconName, category: 'Secure', color: 'green', formats: 'PDF documents', popular: false },
@@ -65,6 +66,10 @@ function ToolPage({ feature, onBack }: { feature: Feature; onBack: () => void })
   const [pdfCompressionPassword, setPdfCompressionPassword] = useState('')
   const [organizerFile, setOrganizerFile] = useState<File | null>(null)
   const [organizerPages, setOrganizerPages] = useState<OrganizerPage[]>([])
+  const [batchFiles, setBatchFiles] = useState<File[]>([])
+  const [batchOperation, setBatchOperation] = useState<'compress' | 'convert'>('compress')
+  const [batchFormat, setBatchFormat] = useState<'webp' | 'jpeg' | 'png'>('webp')
+  const [batchQuality, setBatchQuality] = useState(75)
   const [status, setStatus] = useState<'idle' | 'converting' | 'success' | 'error'>('idle')
   const [message, setMessage] = useState('')
   const [isDragging, setIsDragging] = useState(false)
@@ -238,6 +243,37 @@ function ToolPage({ feature, onBack }: { feature: Feature; onBack: () => void })
       setStatus('success'); setMessage(`Done! Your organized PDF contains ${organizerPages.length} ${organizerPages.length === 1 ? 'page' : 'pages'}.`)
     } catch (error) {
       setStatus('error'); setMessage(error instanceof Error ? error.message : 'Could not organize PDF')
+    }
+  }
+
+  const addBatchFiles = (incoming: File[]) => {
+    const supported = incoming.filter((item) => ['image/png', 'image/jpeg', 'image/webp'].includes(item.type) && item.size <= 20 * 1024 * 1024)
+    if (supported.length !== incoming.length) { setStatus('error'); setMessage('Some files were skipped. Use PNG, JPEG, or WebP images under 20 MB.') }
+    else { setStatus('idle'); setMessage('') }
+    setBatchFiles((current) => {
+      const known = new Set(current.map((item) => `${item.name}:${item.size}:${item.lastModified}`))
+      const unique = supported.filter((item) => !known.has(`${item.name}:${item.size}:${item.lastModified}`))
+      return [...current, ...unique].slice(0, 10)
+    })
+  }
+
+  const processBatch = async () => {
+    if (!batchFiles.length) return
+    setStatus('converting'); setMessage(`Processing ${batchFiles.length} images…`)
+    const data = new FormData(); batchFiles.forEach((item) => data.append('files', item))
+    data.append('operation', batchOperation); data.append('format', batchFormat); data.append('quality', String(batchQuality))
+    try {
+      const response = await fetch('/api/v1/batch-images', { method: 'POST', body: data })
+      if (!response.ok) {
+        const body = await response.json() as { error?: { message?: string } }
+        throw new Error(body.error?.message ?? 'Batch processing failed')
+      }
+      const blob = await response.blob(); const url = URL.createObjectURL(blob); const link = document.createElement('a')
+      link.href = url; link.download = 'fileflow-batch-images.zip'; link.click(); URL.revokeObjectURL(url)
+      const reduction = Number(response.headers.get('x-reduction-percent'))
+      setStatus('success'); setMessage(`Done! ${batchFiles.length} images downloaded in one ZIP${batchOperation === 'compress' && reduction > 0 ? ` · ${reduction}% smaller` : ''}.`)
+    } catch (error) {
+      setStatus('error'); setMessage(error instanceof Error ? error.message : 'Batch processing failed')
     }
   }
 
@@ -489,7 +525,17 @@ function ToolPage({ feature, onBack }: { feature: Feature; onBack: () => void })
         <h1>{feature.title}</h1>
         <p>{feature.description} Your files are encrypted and automatically deleted after processing.</p>
       </section>
-      {feature.id === 'pdf-organize' ? <section className={`upload-panel organizer-panel ${isDragging ? 'dragging' : ''}`} onDragOver={(event) => { event.preventDefault(); setIsDragging(true) }} onDragLeave={() => setIsDragging(false)} onDrop={(event) => { event.preventDefault(); setIsDragging(false); void selectOrganizerPdf(event.dataTransfer.files[0]) }}>
+      {feature.id === 'batch-images' ? <section className={`upload-panel batch-panel ${isDragging ? 'dragging' : ''}`} onDragOver={(event) => { event.preventDefault(); setIsDragging(true) }} onDragLeave={() => setIsDragging(false)} onDrop={(event) => { event.preventDefault(); setIsDragging(false); addBatchFiles(Array.from(event.dataTransfer.files)) }}>
+        <input ref={inputRef} type="file" accept="image/png,image/jpeg,image/webp" multiple hidden onChange={(event) => addBatchFiles(Array.from(event.target.files ?? []))}/>
+        {!batchFiles.length ? <><div className="upload-icon batch"><Icon name="upload" size={28}/></div><h2>Choose images to process</h2><p>PNG, JPEG, or WebP · Up to 10 files, 20 MB each</p><button className="primary" onClick={() => inputRef.current?.click()}>Choose images <Icon name="arrow" size={17}/></button></> : <div className="batch-workspace">
+          <div className="batch-header"><div><strong>Selected images</strong><span>{batchFiles.length} of 10 files</span></div><button disabled={batchFiles.length >= 10} onClick={() => inputRef.current?.click()}>+ Add images</button></div>
+          <div className="batch-list">{batchFiles.map((item, index) => <div className="batch-item" key={`${item.name}-${item.size}-${item.lastModified}`}><span>{index + 1}</span><div className="file-type">{item.name.split('.').pop()?.toUpperCase()}</div><div><strong>{item.name}</strong><small>{(item.size / 1024 / 1024).toFixed(2)} MB</small></div><button onClick={() => setBatchFiles((files) => files.filter((file) => file !== item))} aria-label={`Remove ${item.name}`}>×</button></div>)}</div>
+          <fieldset className="batch-operation"><legend>Batch operation</legend><label className={batchOperation === 'compress' ? 'active' : ''}><input type="radio" name="batch-operation" checked={batchOperation === 'compress'} onChange={() => setBatchOperation('compress')}/><span><strong>Compress originals</strong><small>Keep each image format</small></span></label><label className={batchOperation === 'convert' ? 'active' : ''}><input type="radio" name="batch-operation" checked={batchOperation === 'convert'} onChange={() => setBatchOperation('convert')}/><span><strong>Convert all</strong><small>Use one output format</small></span></label></fieldset>
+          <div className="batch-settings">{batchOperation === 'convert' && <label>Output format<select value={batchFormat} onChange={(event) => setBatchFormat(event.target.value as typeof batchFormat)}><option value="webp">WebP</option><option value="jpeg">JPEG</option><option value="png">PNG</option></select></label>}<label>Quality <span>{batchQuality}%</span><input type="range" min="20" max="95" value={batchQuality} onChange={(event) => setBatchQuality(Number(event.target.value))}/></label></div>
+          <button className="primary convert-button" disabled={status === 'converting'} onClick={processBatch}>{status === 'converting' ? <><span className="spinner"/> Processing images…</> : <>{batchOperation === 'convert' ? 'Convert' : 'Compress'} {batchFiles.length} images <Icon name="arrow" size={17}/></>}</button>
+        </div>}
+        {message && <div className={`status-message ${status}`} role="status" aria-live="polite">{status === 'success' && <Icon name="check" size={17}/>} {message}</div>}
+      </section> : feature.id === 'pdf-organize' ? <section className={`upload-panel organizer-panel ${isDragging ? 'dragging' : ''}`} onDragOver={(event) => { event.preventDefault(); setIsDragging(true) }} onDragLeave={() => setIsDragging(false)} onDrop={(event) => { event.preventDefault(); setIsDragging(false); void selectOrganizerPdf(event.dataTransfer.files[0]) }}>
         <input ref={inputRef} type="file" accept="application/pdf" hidden onChange={(event) => void selectOrganizerPdf(event.target.files?.[0])}/>
         {!organizerFile ? <><div className="upload-icon organizer"><Icon name="merge" size={28}/></div><h2>Choose a PDF to organize</h2><p>PDF documents · Maximum 30 MB and 100 pages</p><button className="primary" disabled={status === 'converting'} onClick={() => inputRef.current?.click()}>{status === 'converting' ? <><span className="spinner"/> Creating previews…</> : <>Choose PDF <Icon name="arrow" size={17}/></>}</button></> : <div className="organizer-workspace">
           <div className="organizer-header"><div><strong>Arrange pages</strong><span>{organizerPages.length} of 100 pages · Use arrows to reorder</span></div><button onClick={() => inputRef.current?.click()}>Replace PDF</button></div>

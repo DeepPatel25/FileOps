@@ -6,6 +6,7 @@ const tools: Tool[] = [
   { id: 'compress', title: 'Compress files', description: 'Reduce file size while retaining quality.', category: 'Optimize', formats: ['PDF', 'JPG', 'PNG', 'ZIP'], popular: true },
   { id: 'pdf-compress', title: 'Compress PDF', description: 'Reduce scanned and image-heavy PDF file sizes.', category: 'Optimize', formats: ['PDF'], popular: true },
   { id: 'pdf-organize', title: 'Organize PDF pages', description: 'Reorder, rotate, or remove PDF pages visually.', category: 'Organize', formats: ['PDF'], popular: true },
+  { id: 'batch-images', title: 'Batch images', description: 'Convert or compress several images in one job.', category: 'Optimize', formats: ['JPG', 'PNG', 'WebP', 'ZIP'], popular: true },
   { id: 'merge', title: 'Merge files', description: 'Combine files into one organized document.', category: 'Organize', formats: ['PDF', 'DOCX', 'JPG', 'PNG'], popular: false },
   { id: 'split', title: 'Split PDF', description: 'Separate or extract selected PDF pages.', category: 'Organize', formats: ['PDF'], popular: false },
   { id: 'protect', title: 'Protect PDF', description: 'Password-protect confidential PDF documents.', category: 'Secure', formats: ['PDF'], popular: false },

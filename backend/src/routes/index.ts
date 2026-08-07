@@ -11,6 +11,7 @@ import { videoSplitRouter } from "./video-split.routes.js";
 import { videoCompressRouter } from "./video-compress.routes.js";
 import { pdfCompressRouter } from './pdf-compress.routes.js'
 import { pdfOrganizeRouter } from './pdf-organize.routes.js'
+import { batchImageRouter } from './batch-image.routes.js'
 
 export const apiRouter = Router()
 
@@ -26,3 +27,4 @@ apiRouter.use("/video-split", videoSplitRouter);
 apiRouter.use("/video-compress", videoCompressRouter);
 apiRouter.use('/pdf-compress', pdfCompressRouter)
 apiRouter.use('/pdf-organize', pdfOrganizeRouter)
+apiRouter.use('/batch-images', batchImageRouter)
