@@ -5,6 +5,7 @@ const contentTypes = {
   jpeg: 'image/jpeg',
   png: 'image/png',
   webp: 'image/webp',
+  heif: 'image/avif',
 } as const
 
 export const compressImage: RequestHandler = async (request, response, next) => {
@@ -24,8 +25,8 @@ export const compressImage: RequestHandler = async (request, response, next) => 
     const metadata = await image.metadata()
     const format = metadata.format
 
-    if (format !== 'jpeg' && format !== 'png' && format !== 'webp') {
-      response.status(400).json({ success: false, error: { message: 'Only PNG, JPEG, and WebP images are supported' } })
+    if (format !== 'jpeg' && format !== 'png' && format !== 'webp' && format !== 'heif') {
+      response.status(400).json({ success: false, error: { message: 'Only PNG, JPEG, WebP, HEIC, and AVIF images are supported' } })
       return
     }
 
@@ -33,10 +34,12 @@ export const compressImage: RequestHandler = async (request, response, next) => 
       ? await image.jpeg({ quality: requestedQuality, mozjpeg: true }).toBuffer()
       : format === 'webp'
         ? await image.webp({ quality: requestedQuality, effort: 4 }).toBuffer()
-        : await image.png({ compressionLevel: 9, palette: true, quality: requestedQuality }).toBuffer()
+        : format === 'png'
+          ? await image.png({ compressionLevel: 9, palette: true, quality: requestedQuality }).toBuffer()
+          : await image.avif({ quality: Math.min(requestedQuality, 80), effort: 5 }).toBuffer()
 
     const baseName = request.file.originalname.replace(/\.[^.]+$/, '').replace(/[^a-zA-Z0-9_-]/g, '-') || 'image'
-    const extension = format === 'jpeg' ? 'jpg' : format
+    const extension = format === 'jpeg' ? 'jpg' : format === 'heif' ? 'avif' : format
 
     response.set({
       'Content-Type': contentTypes[format],

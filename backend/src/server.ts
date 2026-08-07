@@ -1,5 +1,9 @@
 import { app } from './app.js'
 import { env } from './config/env.js'
+import { closeVideoQueue } from './controllers/video-compress.controller.js'
+import { startTemporaryFileCleanup } from './services/temp-cleanup.js'
+
+const stopTemporaryFileCleanup = startTemporaryFileCleanup()
 
 const server = app.listen(env.port, () => {
   console.log(`FileFlow API running at http://localhost:${env.port}`)
@@ -14,7 +18,8 @@ server.headersTimeout = 66_000
 
 const shutdown = (signal: string) => {
   console.log(`${signal} received, closing server`)
-  server.close(() => process.exit(0))
+  stopTemporaryFileCleanup()
+  server.close(() => void closeVideoQueue().finally(() => process.exit(0)))
 }
 
 process.on('SIGTERM', () => shutdown('SIGTERM'))

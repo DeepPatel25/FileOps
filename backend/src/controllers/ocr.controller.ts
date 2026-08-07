@@ -11,7 +11,8 @@ import { createWorker } from 'tesseract.js'
 
 const runFile = promisify(execFile)
 const MAX_PDF_PAGES = 20
-const languagePath = join(dirname(fileURLToPath(import.meta.url)), '../../node_modules/@tesseract.js-data/eng/4.0.0')
+const moduleRoot = join(dirname(fileURLToPath(import.meta.url)), '../../node_modules/@tesseract.js-data')
+const languages = new Set(['eng', 'deu', 'fra', 'hin', 'spa'])
 
 const prepareImage = (buffer: Buffer) => sharp(buffer, { failOn: 'error' })
   .rotate()
@@ -30,6 +31,16 @@ export const recognizeText: RequestHandler = async (request, response, next) => 
   let directory: string | undefined
   let worker: Awaited<ReturnType<typeof createWorker>> | undefined
   try {
+    const outputMode = String(request.body.output ?? 'text')
+    if (outputMode !== 'text' && outputMode !== 'searchable-pdf') {
+      response.status(400).json({ success: false, error: { message: 'OCR output must be text or searchable-pdf' } })
+      return
+    }
+    const language = String(request.body.language ?? 'eng')
+    if (!languages.has(language)) {
+      response.status(400).json({ success: false, error: { message: 'OCR language must be English, German, French, Hindi, or Spanish' } })
+      return
+    }
     const images: Array<{ page: number; buffer: Buffer }> = []
     if (request.file.mimetype === 'application/pdf') {
       let document: PDFDocument
@@ -62,17 +73,35 @@ export const recognizeText: RequestHandler = async (request, response, next) => 
       images.push({ page: 1, buffer: await prepareImage(request.file.buffer) })
     }
 
-    worker = await createWorker('eng', 1, { langPath: languagePath, cacheMethod: 'none', gzip: true })
+    worker = await createWorker(language, 1, { langPath: join(moduleRoot, language, '4.0.0'), cacheMethod: 'none', gzip: true })
     const pages: Array<{ page: number; text: string; confidence: number }> = []
+    const searchablePdf = outputMode === 'searchable-pdf' ? await PDFDocument.create() : undefined
     for (const image of images) {
-      const result = await worker.recognize(image.buffer)
+      const result = await worker.recognize(image.buffer, {}, { pdf: outputMode === 'searchable-pdf' })
       pages.push({
         page: image.page,
         text: result.data.text.replace(/\r\n/g, '\n').replace(/\n{3,}/g, '\n\n').trim(),
         confidence: Math.round(result.data.confidence),
       })
+      if (searchablePdf && result.data.pdf) {
+        const recognizedPage = await PDFDocument.load(Uint8Array.from(result.data.pdf))
+        const [page] = await searchablePdf.copyPages(recognizedPage, [0])
+        if (page) searchablePdf.addPage(page)
+      }
     }
     const text = pages.map((page) => pages.length > 1 ? `Page ${page.page}\n${page.text}` : page.text).join('\n\n').trim()
+    if (searchablePdf) {
+      if (searchablePdf.getPageCount() !== images.length) throw new Error('Could not generate every searchable PDF page')
+      const result = Buffer.from(await searchablePdf.save({ useObjectStreams: true, addDefaultPage: false }))
+      const baseName = request.file.originalname.replace(/\.[^.]+$/, '').replace(/[^a-zA-Z0-9_-]/g, '-') || 'document'
+      response.set({
+        'Content-Type': 'application/pdf',
+        'Content-Disposition': `attachment; filename="${baseName}-searchable.pdf"`,
+        'X-Page-Count': String(images.length),
+        'X-OCR-Confidence': String(pages.length ? Math.round(pages.reduce((sum, page) => sum + page.confidence, 0) / pages.length) : 0),
+      }).send(result)
+      return
+    }
     response.json({
       success: true,
       data: {
@@ -83,7 +112,7 @@ export const recognizeText: RequestHandler = async (request, response, next) => 
         characters: text.length,
         averageConfidence: pages.length ? Math.round(pages.reduce((sum, page) => sum + page.confidence, 0) / pages.length) : 0,
         fileName: request.file.originalname,
-        language: 'eng',
+        language,
       },
     })
   } catch (error) {

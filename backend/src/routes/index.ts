@@ -13,8 +13,15 @@ import { pdfCompressRouter } from './pdf-compress.routes.js'
 import { pdfOrganizeRouter } from './pdf-organize.routes.js'
 import { batchImageRouter } from './batch-image.routes.js'
 import { ocrRouter } from './ocr.routes.js'
+import { pdfConvertRouter } from './pdf-convert.routes.js'
+import { mediaConvertRouter } from './media-convert.routes.js'
+import { documentConvertRouter } from './document-convert.routes.js'
+import { apiRateLimit, processingRateLimit } from '../middleware/rate-limit.js'
 
 export const apiRouter = Router()
+
+apiRouter.use(apiRateLimit)
+apiRouter.use(processingRateLimit)
 
 apiRouter.use('/health', healthRouter)
 apiRouter.use('/tools', toolRouter)
@@ -30,3 +37,6 @@ apiRouter.use('/pdf-compress', pdfCompressRouter)
 apiRouter.use('/pdf-organize', pdfOrganizeRouter)
 apiRouter.use('/batch-images', batchImageRouter)
 apiRouter.use('/ocr', ocrRouter)
+apiRouter.use('/pdf-convert', pdfConvertRouter)
+apiRouter.use('/media-convert', mediaConvertRouter)
+apiRouter.use('/document-convert', documentConvertRouter)

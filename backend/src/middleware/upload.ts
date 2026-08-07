@@ -1,6 +1,6 @@
 import multer from 'multer'
 
-const supportedTypes = new Set(['image/png', 'image/jpeg', 'image/webp'])
+const supportedTypes = new Set(['image/png', 'image/jpeg', 'image/webp', 'image/avif', 'image/heic', 'image/heif'])
 
 export const imageUpload = multer({
   storage: multer.memoryStorage(),

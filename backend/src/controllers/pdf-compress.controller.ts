@@ -1,8 +1,10 @@
 import { execFile } from 'node:child_process'
+import { createReadStream } from 'node:fs'
 import { mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { promisify } from 'node:util'
+import { pipeline } from 'node:stream/promises'
 import type { RequestHandler } from 'express'
 import { PDFDocument } from 'pdf-lib'
 import sharp from 'sharp'
@@ -39,20 +41,22 @@ export const compressPdf: RequestHandler = async (request, response, next) => {
   const preset = String(request.body.preset ?? 'balanced') as CompressionPreset
   const profile = compressionProfiles[preset]
   if (!profile) {
+    if (request.file.path) await rm(request.file.path, { force: true })
     response.status(400).json({ success: false, error: { message: 'Preset must be high, balanced, or small' } })
     return
   }
   const password = String(request.body.password ?? '')
   if (password.length > 128) {
+    if (request.file.path) await rm(request.file.path, { force: true })
     response.status(400).json({ success: false, error: { message: 'PDF password must not exceed 128 characters' } })
     return
   }
 
   const directory = await mkdtemp(join(tmpdir(), 'fileflow-pdf-compress-'))
   try {
-    const sourcePath = join(directory, 'source.pdf')
+    const sourcePath = request.file.path || join(directory, 'source.pdf')
     const outputPrefix = join(directory, 'page')
-    await writeFile(sourcePath, request.file.buffer)
+    if (!request.file.path) await writeFile(sourcePath, request.file.buffer)
 
     const passwordArguments = password ? ['-upw', password] : []
     let pageCount: number
@@ -119,31 +123,37 @@ export const compressPdf: RequestHandler = async (request, response, next) => {
       return Buffer.from(await output.save({ useObjectStreams: true, addDefaultPage: false }))
     }
 
-    let compressed = request.file.buffer
+    let compressed: Buffer | undefined
+    let compressedLength = request.file.size
     let compressionApplied = false
     for (const candidateProfile of fallbackProfiles[preset]) {
       const candidate = await buildCandidate(candidateProfile)
-      if (candidate.length < compressed.length) {
+      if (candidate.length < compressedLength) {
         compressed = candidate
+        compressedLength = candidate.length
         compressionApplied = true
       }
-      if (compressed.length <= request.file.size * 0.9) break
+      if (compressedLength <= request.file.size * 0.9) break
     }
-    const reduction = Math.round((1 - compressed.length / request.file.size) * 100)
+    const reduction = Math.round((1 - compressedLength / request.file.size) * 100)
     const baseName = request.file.originalname.replace(/\.pdf$/i, '').replace(/[^a-zA-Z0-9_-]/g, '-') || 'document'
     response.set({
       'Content-Type': 'application/pdf',
       'Content-Disposition': `attachment; filename="${baseName}-compressed.pdf"`,
-      'Content-Length': String(compressed.length),
+      'Content-Length': String(compressedLength),
       'X-Original-Size': String(request.file.size),
-      'X-Compressed-Size': String(compressed.length),
+      'X-Compressed-Size': String(compressedLength),
       'X-Reduction-Percent': String(reduction),
       'X-Compression-Applied': String(compressionApplied),
       'X-Page-Count': String(pageCount),
-    }).send(compressed)
+    })
+    if (compressed) response.send(compressed)
+    else if (request.file.path) await pipeline(createReadStream(sourcePath), response)
+    else response.send(request.file.buffer)
   } catch (error) {
     next(error)
   } finally {
     await rm(directory, { recursive: true, force: true })
+    if (request.file.path) await rm(request.file.path, { force: true }).catch(() => undefined)
   }
 }

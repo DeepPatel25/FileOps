@@ -6,6 +6,7 @@ Node.js, Express, and TypeScript API for the FileFlow frontend.
 
 ```bash
 cp .env.example .env
+docker compose -f ../docker-compose.yml up -d
 npm install
 npm run dev
 ```
@@ -16,6 +17,7 @@ The API runs at `http://localhost:4000` by default.
 
 - `GET /` — API information
 - `GET /api/v1/health` — service health
+- `GET /api/v1/health/metrics` — process memory and BullMQ queue metrics
 - `GET /api/v1/tools` — list tools (`category` and `search` query parameters supported)
 - `GET /api/v1/tools/:id` — get a tool
 - `POST /api/v1/convert` — convert a PNG, JPEG, or WebP image (multipart fields: `file`, `format`)
@@ -24,7 +26,11 @@ The API runs at `http://localhost:4000` by default.
 - `POST /api/v1/pdf-organize/preview` — generate thumbnails for visual page organization (`file`; maximum 30 MB and 100 pages)
 - `POST /api/v1/pdf-organize` — reorder, rotate, or remove PDF pages (`file`, JSON `operations`)
 - `POST /api/v1/batch-images` — convert or compress up to 10 images and download a ZIP (`files`, `operation`, `format`, `quality`)
-- `POST /api/v1/ocr` — recognize English text in an image or a scanned PDF (`file`; maximum 25 MB and 20 PDF pages)
+- `POST /api/v1/ocr` — recognize English, German, French, Hindi, or Spanish text in an image or scanned PDF (`file`, `language`, `output`: `text` or `searchable-pdf`; maximum 25 MB and 20 PDF pages)
+- `POST /api/v1/pdf-convert/to-images` — export PDF pages as PNG, JPEG, or WebP (`file`, `format`, `dpi`)
+- `POST /api/v1/pdf-convert/from-images` — combine up to 10 images into a PDF (`files`, `pageSize`, `orientation`)
+- `POST /api/v1/media-convert` — convert audio and video to MP4, WebM, MP3, M4A, or WAV (`file`, `format`; maximum 2 GB)
+- `POST /api/v1/document-convert` — convert DOCX/PPTX to PDF using Gotenberg, or PDF text to editable DOCX (`file`; maximum 25 MB)
 - `POST /api/v1/merge` — merge 2–10 PDF or image files into one PDF (multipart field: `files`)
 - `POST /api/v1/split` — extract selected PDF pages or split every page into a ZIP (`file`, `mode`, `pages`)
 - `POST /api/v1/protect` — encrypt a PDF with AES-256 and document permissions (`file`, `password`, permission fields)
@@ -33,8 +39,14 @@ The API runs at `http://localhost:4000` by default.
 - `POST /api/v1/video-compress` — upload a video and start a background MP4 compression job (`file`, `quality`, `resolution`)
 - `GET /api/v1/video-compress/jobs/:id` — poll compression status and percentage
 - `GET /api/v1/video-compress/jobs/:id/download` — download a completed video (available for one hour)
+- `DELETE /api/v1/video-compress/jobs/:id` — cancel a queued or active compression job
+- `GET /api/v1/video-compress/jobs?clientId=...` — list recent compression jobs for a browser client
+- `DELETE /api/v1/video-compress/history/:id?clientId=...` — remove a completed history item and its output
+- `DELETE /api/v1/video-compress/history?clientId=...` — clear completed/failed history
 
-Video compression runs one queued job at a time. It automatically uses Apple VideoToolbox hardware encoding when available, with `libx264` as the fallback. Software encoding and video filters can use up to 75% of the available logical CPU threads.
+Video compression uses a durable BullMQ queue backed by the Redis container. Jobs survive API restarts, and `VIDEO_WORKER_CONCURRENCY` controls parallel processing. It automatically uses Apple VideoToolbox hardware encoding when available, with `libx264` as the fallback. Software encoding and video filters can use up to 75% of the available logical CPU threads.
+
+Office-to-PDF conversion uses the Gotenberg container defined in the root Compose file. PDF-to-DOCX is text-focused: text remains editable, while complex layout, forms, and columns may differ from the source.
 
 ## Large video deployment
 

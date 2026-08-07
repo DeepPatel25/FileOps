@@ -81,15 +81,14 @@ export const organizePdfPages: RequestHandler = async (request, response, next) 
     } catch {
       operations = undefined
     }
-    if (!Array.isArray(operations) || operations.length < 1 || operations.length > pageCount) {
-      response.status(400).json({ success: false, error: { message: 'Page operations must contain between 1 and the document page count' } })
+    if (!Array.isArray(operations) || operations.length < 1 || operations.length > MAX_PAGES) {
+      response.status(400).json({ success: false, error: { message: `Page operations must contain between 1 and ${MAX_PAGES} output pages` } })
       return
     }
     const parsed = operations as PageOperation[]
     const valid = parsed.every((item) => Number.isInteger(item?.page) && item.page >= 1 && item.page <= pageCount && rotations.has(item.rotation))
-    const uniquePages = new Set(parsed.map((item) => item.page))
-    if (!valid || uniquePages.size !== parsed.length) {
-      response.status(400).json({ success: false, error: { message: 'Each page must be unique and use a rotation of 0, 90, 180, or 270 degrees' } })
+    if (!valid) {
+      response.status(400).json({ success: false, error: { message: 'Each page must exist and use a rotation of 0, 90, 180, or 270 degrees' } })
       return
     }
 

@@ -1,6 +1,6 @@
 import multer from 'multer'
 
-const supportedTypes = new Set(['application/pdf', 'image/png', 'image/jpeg', 'image/webp'])
+const supportedTypes = new Set(['application/pdf', 'image/png', 'image/jpeg', 'image/webp', 'image/avif', 'image/heic', 'image/heif'])
 
 export const mergeUpload = multer({
   storage: multer.memoryStorage(),

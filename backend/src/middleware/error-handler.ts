@@ -24,7 +24,7 @@ export const errorHandler: ErrorRequestHandler = (error: unknown, _request, resp
 
   const message = error instanceof Error ? error.message : 'Internal server error'
 
-  if (!env.isProduction) console.error(error)
+  console.error(JSON.stringify({ level: 'error', event: 'request_error', message, stack: !env.isProduction && error instanceof Error ? error.stack : undefined }))
 
   response.status(500).json({
     success: false,

@@ -1,13 +1,14 @@
 import type { RequestHandler } from 'express'
 import sharp from 'sharp'
 
-const outputFormats = ['png', 'jpeg', 'webp'] as const
+const outputFormats = ['png', 'jpeg', 'webp', 'avif'] as const
 type OutputFormat = typeof outputFormats[number]
 
 const contentTypes: Record<OutputFormat, string> = {
   png: 'image/png',
   jpeg: 'image/jpeg',
   webp: 'image/webp',
+  avif: 'image/avif',
 }
 
 export const convertImage: RequestHandler = async (request, response, next) => {
@@ -29,7 +30,9 @@ export const convertImage: RequestHandler = async (request, response, next) => {
       ? await pipeline.png({ compressionLevel: 8 }).toBuffer()
       : format === 'jpeg'
         ? await pipeline.jpeg({ quality: 88, mozjpeg: true }).toBuffer()
-        : await pipeline.webp({ quality: 88 }).toBuffer()
+        : format === 'webp'
+          ? await pipeline.webp({ quality: 88 }).toBuffer()
+          : await pipeline.avif({ quality: 55, effort: 5 }).toBuffer()
 
     const originalName = request.file.originalname.replace(/\.[^.]+$/, '').replace(/[^a-zA-Z0-9_-]/g, '-') || 'converted'
     const extension = format === 'jpeg' ? 'jpg' : format

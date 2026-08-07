@@ -47,3 +47,10 @@ test('rejects an unsupported batch operation', async () => {
   assert.equal(result.statusCode, 400)
   assert.equal(result.body.error.message, 'Operation must be compress or convert')
 })
+
+test('converts image batches to AVIF', async () => {
+  const result = await invoke({ operation: 'convert', format: 'avif', quality: '60' })
+  const archive = await JSZip.loadAsync(result.body)
+  const first = await archive.file('01-first-image.avif').async('nodebuffer')
+  assert.equal((await sharp(first).metadata()).format, 'heif')
+})

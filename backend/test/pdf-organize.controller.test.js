@@ -43,8 +43,10 @@ test('reorders, rotates, and removes PDF pages', async () => {
   assert.equal(output.getPage(1).getWidth(), 201)
 })
 
-test('rejects duplicate page operations', async () => {
+test('duplicates pages when an operation references a page more than once', async () => {
   const result = await invoke([{ page: 1, rotation: 0 }, { page: 1, rotation: 90 }])
-  assert.equal(result.statusCode, 400)
-  assert.match(result.body.error.message, /unique/)
+  assert.equal(result.statusCode, 200)
+  const output = await PDFDocument.load(result.body)
+  assert.equal(output.getPageCount(), 2)
+  assert.equal(output.getPage(1).getRotation().angle, 90)
 })

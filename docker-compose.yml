@@ -1,0 +1,63 @@
+services:
+  frontend:
+    build:
+      context: ./frontend
+      target: production
+    image: fileflow-frontend:latest
+    ports:
+      - "8080:8080"
+    depends_on:
+      backend:
+        condition: service_healthy
+    restart: unless-stopped
+
+  backend:
+    build:
+      context: ./backend
+      target: production
+    image: fileflow-backend:latest
+    environment:
+      NODE_ENV: production
+      PORT: 4000
+      FRONTEND_URL: http://localhost:8080
+      REDIS_URL: redis://redis:6379
+      GOTENBERG_URL: http://gotenberg:3000
+      VIDEO_WORKER_CONCURRENCY: ${VIDEO_WORKER_CONCURRENCY:-1}
+    ports:
+      - "127.0.0.1:4000:4000"
+    depends_on:
+      redis:
+        condition: service_healthy
+      gotenberg:
+        condition: service_healthy
+    init: true
+    stop_grace_period: 30s
+    restart: unless-stopped
+
+  redis:
+    image: redis:8.2-alpine
+    command: redis-server --appendonly yes --appendfsync everysec
+    ports:
+      - "127.0.0.1:6379:6379"
+    volumes:
+      - fileflow-redis:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+
+  gotenberg:
+    image: gotenberg/gotenberg:8-libreoffice
+    ports:
+      - "127.0.0.1:3000:3000"
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "--silent", "http://localhost:3000/health"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+
+volumes:
+  fileflow-redis:
