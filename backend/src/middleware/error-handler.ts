@@ -1,33 +1,50 @@
-import type { ErrorRequestHandler, RequestHandler } from 'express'
-import multer from 'multer'
-import { env } from '../config/env.js'
+import type { ErrorRequestHandler, RequestHandler } from "express";
+import multer from "multer";
+import { env } from "../config/env.js";
 
 export const notFoundHandler: RequestHandler = (request, response) => {
   response.status(404).json({
     success: false,
-    error: { message: `Route ${request.method} ${request.originalUrl} not found` },
-  })
-}
+    error: {
+      message: `Route ${request.method} ${request.originalUrl} not found`,
+    },
+  });
+};
 
-export const errorHandler: ErrorRequestHandler = (error: unknown, _request, response, _next) => {
+export const errorHandler: ErrorRequestHandler = (
+  error: unknown,
+  _request,
+  response,
+  _next,
+) => {
   if (error instanceof multer.MulterError) {
-    const message = error.code === 'LIMIT_FILE_SIZE'
-      ? 'File is too large for this operation'
-      : error.code === 'LIMIT_FILE_COUNT'
-        ? 'You can upload a maximum of 10 files'
-      : error.code === 'LIMIT_UNEXPECTED_FILE'
-        ? 'This file type is not supported'
-        : error.message
-    response.status(400).json({ success: false, error: { message } })
-    return
+    const message =
+      error.code === "LIMIT_FILE_SIZE"
+        ? "File is too large for this operation"
+        : error.code === "LIMIT_FILE_COUNT"
+          ? "You can upload a maximum of 10 files"
+          : error.code === "LIMIT_UNEXPECTED_FILE"
+            ? "This file type is not supported"
+            : error.message;
+    response.status(400).json({ success: false, error: { message } });
+    return;
   }
 
-  const message = error instanceof Error ? error.message : 'Internal server error'
+  const message =
+    error instanceof Error ? error.message : "Internal server error";
 
-  console.error(JSON.stringify({ level: 'error', event: 'request_error', message, stack: !env.isProduction && error instanceof Error ? error.stack : undefined }))
+  console.error(
+    JSON.stringify({
+      level: "error",
+      event: "request_error",
+      message,
+      stack:
+        !env.isProduction && error instanceof Error ? error.stack : undefined,
+    }),
+  );
 
   response.status(500).json({
     success: false,
-    error: { message: env.isProduction ? 'Internal server error' : message },
-  })
-}
+    error: { message: env.isProduction ? "Internal server error" : message },
+  });
+};

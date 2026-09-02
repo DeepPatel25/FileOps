@@ -21,7 +21,10 @@ export const videoUpload = multer({
   storage,
   limits: { fileSize: 5 * 1024 * 1024 * 1024, files: 1 },
   fileFilter: (_request, file, callback) => {
-    if (!file.mimetype.startsWith("video/") || !supportedExtensions.test(file.originalname)) {
+    if (
+      !file.mimetype.startsWith("video/") ||
+      !supportedExtensions.test(file.originalname)
+    ) {
       callback(new multer.MulterError("LIMIT_UNEXPECTED_FILE", "file"));
       return;
     }
